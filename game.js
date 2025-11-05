@@ -1,6 +1,6 @@
 // Quantum Dash - Portal Runner
-const W=800,H=600,STICK_H=50,STICK_W=6,WALL_SPACING=300,PORTAL_W=100,WALL_THICK=8;
-let sc=0,m=0,p1,p2,walls=[],cam,g,spd=2,t=0,colors=[0x00ffff,0xff00ff,0xffff00,0xff0000,0x00ff00],nextId=0,snd,txts={};
+const W=800,H=600,STICK_H=50,STICK_W=6,WALL_SPACING=280,PORTAL_W=100,WALL_THICK=8;
+let sc=0,m=0,p1,p2,walls=[],cam,g,spd=2.5,t=0,colors=[0x00ffff,0xff00ff,0xffff00,0xff0000,0x00ff00],nextId=0,snd,txts={},baseSpeed=4;
 
 const cfg={type:Phaser.AUTO,width:W,height:H,backgroundColor:'#000',scene:{create,update}};
 new Phaser.Game(cfg);
@@ -15,12 +15,14 @@ function create(){
   txts.sub=this.add.text(W/2,H/2-40,'Portal Runner',{fontSize:'24px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
   txts.opt1=this.add.text(W/2,H/2+40,'Press 1 for ONE PLAYER',{fontSize:'28px',color:'#0af',fontFamily:'monospace'}).setOrigin(0.5);
   txts.opt2=this.add.text(W/2,H/2+80,'Press 2 for TWO PLAYERS',{fontSize:'28px',color:'#f90',fontFamily:'monospace'}).setOrigin(0.5);
-  txts.hint1=this.add.text(W/2,H/2+140,'Go through COLORED portal (white dot)!',{fontSize:'18px',color:'#ff0',fontFamily:'monospace'}).setOrigin(0.5);
-  txts.hint2=this.add.text(W/2,H/2+170,'Hit wall = DEATH!',{fontSize:'18px',color:'#f55',fontFamily:'monospace'}).setOrigin(0.5);
+  txts.hint1=this.add.text(W/2,H/2+140,'Go through COLORED portal!',{fontSize:'18px',color:'#ff0',fontFamily:'monospace'}).setOrigin(0.5);
+  txts.hint2=this.add.text(W/2,H/2+165,'1P: Score | 2P: Survive longest!',{fontSize:'16px',color:'#aaa',fontFamily:'monospace'}).setOrigin(0.5);
+  txts.hint3=this.add.text(W/2,H/2+190,'Hit wall = DEATH!',{fontSize:'18px',color:'#f55',fontFamily:'monospace'}).setOrigin(0.5);
   txts.ctrl=this.add.text(W/2,H-40,'P1: ← → | P2: A D',{fontSize:'16px',color:'#888',fontFamily:'monospace'}).setOrigin(0.5);
   txts.p1sc=this.add.text(20,20,'',{fontSize:'20px',color:'#0af',fontFamily:'monospace'}).setOrigin(0);
-  txts.p2sc=this.add.text(W-120,20,'',{fontSize:'20px',color:'#f90',fontFamily:'monospace'}).setOrigin(0);
-  txts.help=this.add.text(W/2,20,'',{fontSize:'18px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
+  txts.p2sc=this.add.text(W-150,20,'',{fontSize:'20px',color:'#f90',fontFamily:'monospace'}).setOrigin(0);
+  txts.timer=this.add.text(W/2,20,'',{fontSize:'24px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
+  txts.help=this.add.text(W/2,50,'',{fontSize:'16px',color:'#ff0',fontFamily:'monospace'}).setOrigin(0.5);
   txts.menu=this.add.text(W/2,H-20,'T: Menu',{fontSize:'16px',color:'#888',fontFamily:'monospace'}).setOrigin(0.5);
   txts.go=this.add.text(W/2,H/2-80,'GAME OVER',{fontSize:'52px',color:'#f55',fontFamily:'monospace'}).setOrigin(0.5);
   txts.win=this.add.text(W/2,H/2-10,'',{fontSize:'40px',color:'#0f0',fontFamily:'monospace'}).setOrigin(0.5);
@@ -30,23 +32,22 @@ function create(){
 
   this.input.keyboard.on('keydown-ONE',()=>{if(sc===0)start(this,0)});
   this.input.keyboard.on('keydown-TWO',()=>{if(sc===0)start(this,1)});
-  this.input.keyboard.on('keydown-SPACE',()=>{if(sc===2){sc=0;walls=[];t=0;spd=2;nextId=0;showMenu();}});
-  this.input.keyboard.on('keydown-T',()=>{if(sc===1){sc=0;walls=[];t=0;spd=2;nextId=0;showMenu();}});
+  this.input.keyboard.on('keydown-SPACE',()=>{if(sc===2){sc=0;walls=[];t=0;spd=2.5;baseSpeed=4;nextId=0;showMenu();}});
+  this.input.keyboard.on('keydown-T',()=>{if(sc===1){sc=0;walls=[];t=0;spd=2.5;baseSpeed=4;nextId=0;showMenu();}});
 
   showMenu();
 }
 
 function start(s,mode){
-  m=mode;sc=1;t=0;spd=2;walls=[];nextId=0;
-  const x1=m===1?W/4:W/2;
-  const x2=3*W/4;
-  p1={x:x1,vx:0,y:H-80,path:[],alive:1,sc:0};
-  if(m===1)p2={x:x2,vx:0,y:H-80,path:[],alive:1,sc:0};
+  m=mode;sc=1;t=0;spd=2.5;baseSpeed=4;walls=[];nextId=0;
+  const x1=m===1?W/3:W/2;
+  const x2=2*W/3;
+  p1={x:x1,vx:0,y:H-80,path:[],alive:1,sc:0,time:0};
+  if(m===1)p2={x:x2,vx:0,y:H-80,path:[],alive:1,sc:0,time:0};
   else p2=null;
 
   // First wall
-  const area=m===1?W/2:W;
-  walls.push({y:-100,portalX:area/2-PORTAL_W/2,portalW:PORTAL_W,col:colors[0],id:nextId,safe:1,hit:0});
+  walls.push({y:-100,portalX:W/2-PORTAL_W/2,portalW:PORTAL_W,col:colors[0],id:nextId,safe:1,hit:0});
   nextId++;
 
   hideAll();
@@ -58,9 +59,19 @@ function update(_,dt){
   if(sc===2)return;
 
   t+=dt*0.001;
-  if(t>15&&spd<5)spd=2+t*0.05;
 
-  if(walls.length===0||walls[walls.length-1].y>WALL_SPACING)spawnWall();
+  // Progressive difficulty - speed increases faster
+  if(t>5)spd=2.5+t*0.15;
+  if(spd>8)spd=8;
+
+  // Player speed also increases
+  if(t>5)baseSpeed=4+t*0.1;
+  if(baseSpeed>9)baseSpeed=9;
+
+  // Reduce wall spacing as game progresses
+  const currentSpacing=Math.max(200,WALL_SPACING-t*3);
+
+  if(walls.length===0||walls[walls.length-1].y>currentSpacing)spawnWall();
 
   for(let i=walls.length-1;i>=0;i--){
     walls[i].y+=spd;
@@ -69,19 +80,35 @@ function update(_,dt){
 
   const k=this.input.keyboard;
   if(p1&&p1.alive){
-    if(k.addKey('LEFT').isDown)p1.vx=-4;
-    else if(k.addKey('RIGHT').isDown)p1.vx=4;
+    if(k.addKey('LEFT').isDown)p1.vx=-baseSpeed;
+    else if(k.addKey('RIGHT').isDown)p1.vx=baseSpeed;
     else p1.vx*=0.85;
+    p1.time=t;
   }
 
   if(p2&&p2.alive){
-    if(k.addKey('A').isDown)p2.vx=-4;
-    else if(k.addKey('D').isDown)p2.vx=4;
+    if(k.addKey('A').isDown)p2.vx=-baseSpeed;
+    else if(k.addKey('D').isDown)p2.vx=baseSpeed;
     else p2.vx*=0.85;
+    p2.time=t;
   }
 
   upd(p1);
   if(p2)upd(p2);
+
+  // Player collision (2P push mechanic)
+  if(m===1&&p1.alive&&p2.alive){
+    const dist=Math.abs(p1.x-p2.x);
+    if(dist<STICK_W+2){
+      if(p1.x<p2.x){
+        p1.x-=1.5;
+        p2.x+=1.5;
+      }else{
+        p1.x+=1.5;
+        p2.x-=1.5;
+      }
+    }
+  }
 
   if(!p1.alive&&(!p2||!p2.alive)){
     sc=2;
@@ -90,23 +117,28 @@ function update(_,dt){
   }
 
   draw();
-  if(p1)txts.p1sc.setText(`P1: ${p1.sc}`);
-  if(p2)txts.p2sc.setText(`P2: ${p2.sc}`);
+
+  if(m===0){
+    // 1P: Show score
+    if(p1)txts.p1sc.setText(`Score: ${p1.sc}`);
+    txts.timer.setText(`Time: ${t.toFixed(1)}s`);
+  }else{
+    // 2P: Show time survived for each
+    txts.timer.setText(`Time: ${t.toFixed(1)}s`);
+    if(p1)txts.p1sc.setText(`P1: ${p1.alive?'ALIVE':'DEAD'}`);
+    if(p2)txts.p2sc.setText(`P2: ${p2.alive?'ALIVE':'DEAD'}`);
+  }
 }
 
 function spawnWall(){
-  const area=m===1?W/2:W;
   const minX=50;
-  const maxX=area-PORTAL_W-50;
+  const maxX=W-PORTAL_W-50;
   const portalX=minX+Math.random()*(maxX-minX);
 
   const prevSafe=walls.length>0?walls.find(w=>w.safe):null;
   const col=prevSafe?prevSafe.col:colors[Math.floor(Math.random()*colors.length)];
 
-  // Add decoy portals (different colors) with low probability
-  const hasDecoy=Math.random()>0.7&&t>10;
-
-  walls.push({y:-50,portalX,portalW:PORTAL_W,col,id:nextId,safe:1,hit:0,hasDecoy});
+  walls.push({y:-50,portalX,portalW:PORTAL_W,col,id:nextId,safe:1,hit:0});
   nextId++;
 }
 
@@ -114,10 +146,8 @@ function upd(p){
   if(!p||!p.alive)return;
 
   p.x+=p.vx;
-  const minX=m===1?(p===p1?10:W/2+10):10;
-  const maxX=m===1?(p===p1?W/2-10:W-10):W-10;
-  if(p.x<minX)p.x=minX;
-  if(p.x>maxX)p.x=maxX;
+  if(p.x<10)p.x=10;
+  if(p.x>W-10)p.x=W-10;
 
   for(let w of walls){
     if(Math.abs(w.y-p.y)<25&&!w.hit){
@@ -146,24 +176,14 @@ function upd(p){
 function draw(){
   g.clear();
 
-  // Split line for 2P
-  if(m===1){
-    g.lineStyle(3,0x333);
-    g.lineBetween(W/2,0,W/2,H);
-  }
-
   // Draw walls with portal gaps
   for(let w of walls){
-    const areaW=m===1?W/2:W;
-    const startX=0;
-
-    // Wall color (gray)
     const wallCol=0x666666;
 
     // Draw wall before portal
-    if(w.portalX>startX){
+    if(w.portalX>0){
       g.fillStyle(wallCol);
-      g.fillRect(startX,w.y-WALL_THICK/2,w.portalX-startX,WALL_THICK);
+      g.fillRect(0,w.y-WALL_THICK/2,w.portalX,WALL_THICK);
     }
 
     // Draw portal gap with colored outline
@@ -182,9 +202,9 @@ function draw(){
 
     // Wall after portal
     const endX=w.portalX+w.portalW;
-    if(endX<startX+areaW){
+    if(endX<W){
       g.fillStyle(wallCol);
-      g.fillRect(endX,w.y-WALL_THICK/2,startX+areaW-endX,WALL_THICK);
+      g.fillRect(endX,w.y-WALL_THICK/2,W-endX,WALL_THICK);
     }
   }
 
@@ -212,15 +232,22 @@ function showMenu(){
   txts.opt2.setVisible(1);
   txts.hint1.setVisible(1);
   txts.hint2.setVisible(1);
+  txts.hint3.setVisible(1);
   txts.ctrl.setVisible(1);
 }
 
 function showGame(){
   hideAll();
-  txts.p1sc.setVisible(1);
-  txts.help.setVisible(1).setText('WHITE DOT = SAFE!');
+  if(m===0){
+    txts.p1sc.setVisible(1);
+    txts.help.setVisible(1).setText('WHITE DOT = SAFE!');
+  }else{
+    txts.p1sc.setVisible(1);
+    txts.p2sc.setVisible(1);
+    txts.help.setVisible(1).setText('PUSH & SURVIVE!');
+  }
+  txts.timer.setVisible(1);
   txts.menu.setVisible(1);
-  if(p2)txts.p2sc.setVisible(1);
 }
 
 function showEnd(){
@@ -231,12 +258,18 @@ function showEnd(){
 
   txts.go.setVisible(1);
   txts.restart.setVisible(1);
-  txts.p1end.setVisible(1).setText(`P1: ${p1.sc} pts`);
 
-  if(p2){
-    txts.p2end.setVisible(1).setText(`P2: ${p2.sc} pts`);
-    const w=p1.sc>p2.sc?'P1 WINS!':p2.sc>p1.sc?'P2 WINS!':'DRAW!';
-    txts.win.setVisible(1).setText(w);
+  if(m===0){
+    // 1P: Show score
+    txts.p1end.setVisible(1).setText(`Score: ${p1.sc} pts | Time: ${p1.time.toFixed(1)}s`);
+  }else{
+    // 2P: Show who survived longest
+    txts.p1end.setVisible(1).setText(`P1: ${p1.time.toFixed(1)}s`);
+    txts.p2end.setVisible(1).setText(`P2: ${p2.time.toFixed(1)}s`);
+
+    if(p1.time>p2.time)txts.win.setVisible(1).setText('P1 WINS!');
+    else if(p2.time>p1.time)txts.win.setVisible(1).setText('P2 WINS!');
+    else txts.win.setVisible(1).setText('DRAW!');
   }
 }
 
