@@ -1,122 +1,141 @@
-// Quantum Dash - 1P/2P Runner
-const TWO_P='auto';const W=800,H=600,LW=100,LANES=3,PW=60,MIN_GAP=10;
-let m=0,go=0,win='',p1,p2,pts=[],g,txt,spd=2,gap=80,t=0,dt=0,snd,cur,wasd,lastT=0;
+// Quantum Dash - Portal Runner
+const W=800,H=600,STICK_H=40,STICK_W=8,WALL_GAP=150,PORTAL_W=80;
+let scene=0,m=0,p1,p2,walls=[],cam,g,spd=3,t=0,colors=[0x00ffff,0xff00ff,0xffff00,0xff0000,0x00ff00],nextId=0,snd;
 
-const cfg={type:Phaser.AUTO,width:W,height:H,backgroundColor:'#000',scene:{create,update}};
+const cfg={type:Phaser.AUTO,width:W,height:H,backgroundColor:'#111',scene:{create,update}};
 new Phaser.Game(cfg);
 
 function create(){
   const s=this;
   g=s.add.graphics();
+  cam=s.cameras.main;
   snd=s.sound.context;
-  cur=s.input.keyboard.createCursorKeys();
-  wasd={w:s.input.keyboard.addKey('W'),a:s.input.keyboard.addKey('A'),d:s.input.keyboard.addKey('D')};
-  txt=s.add.text(W/2,20,'',{fontSize:'20px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
 
-  s.input.keyboard.on('keydown-T',()=>init(s,m===1?0:1));
-  s.input.keyboard.on('keydown-SPACE',()=>{if(go)init(s,m)});
-
-  if(TWO_P===1)init(s,1);
-  else if(TWO_P===0)init(s,0);
-  else init(s,0);
+  s.input.keyboard.on('keydown-ONE',()=>{if(scene===0)start(s,0)});
+  s.input.keyboard.on('keydown-TWO',()=>{if(scene===0)start(s,1)});
+  s.input.keyboard.on('keydown-SPACE',()=>{if(scene===2){scene=0;walls=[];t=0;spd=3;nextId=0;}});
+  s.input.keyboard.on('keydown-T',()=>{if(scene===1){scene=0;walls=[];t=0;spd=3;nextId=0;}});
 }
 
-function init(s,mode){
-  m=mode;go=0;win='';t=0;spd=2;gap=80;dt=0;pts=[];lastT=0;
-  const cx1=m===1?W/4:W/2,cx2=3*W/4;
-  p1={x:cx1,y:H-80,vy:0,ln:1,c:0,sc:0,d:0,j:0,cx:cx1};
-  if(m===1)p2={x:cx2,y:H-80,vy:0,ln:1,c:0,sc:0,d:0,j:0,cx:cx2};
+function start(s,mode){
+  m=mode;scene=1;t=0;spd=3;walls=[];nextId=0;
+  const x1=m===1?W/4-STICK_W/2:W/2-STICK_W/2;
+  const x2=3*W/4-STICK_W/2;
+  p1={x:x1,vx:0,y:H-100,path:[],alive:1,sc:0,stickX:m===1?W/4:W/2};
+  if(m===1)p2={x:x2,vx:0,y:H-100,path:[],alive:1,sc:0,stickX:3*W/4};
   else p2=null;
+
+  // Initial safe path
+  const col=colors[0];
+  walls.push({y:-200,portals:[{x:W/2-PORTAL_W/2,w:PORTAL_W,col,id:nextId,safe:1}]});
+  nextId++;
 }
 
-function update(_,delta){
-  if(!p1)return;
-  dt+=delta;
-  if(dt<16)return;
-  dt=0;
+function update(_,dt){
+  if(scene===0){drawMenu();return;}
+  if(scene===2){drawEnd();return;}
 
-  // Auto switch to 2P
-  if(m===0&&TWO_P==='auto'&&!go){
-    if(wasd.a.isDown||wasd.d.isDown||wasd.w.isDown){init(this,1);return;}
+  t+=dt*0.001;
+
+  // Difficulty
+  if(t>10&&spd<8)spd=3+t*0.08;
+
+  // Spawn walls
+  if(walls.length===0||walls[walls.length-1].y>-WALL_GAP){
+    spawnWall();
   }
 
-  if(go){draw();return;}
-
-  t+=0.016;
-
-  // Difficulty ramp
-  if(t-lastT>5){lastT+=5;spd+=0.5;if(gap>MIN_GAP+20)gap-=5;}
-
-  // Spawn portals
-  if(pts.length===0||H-pts[pts.length-1].y>gap+80){
-    const ln=Math.floor(Math.random()*LANES),y=-40,gp=gap+Math.random()*20-10;
-    pts.push({ln,y,gp,h:0});
+  // Move walls
+  for(let i=walls.length-1;i>=0;i--){
+    walls[i].y+=spd;
+    if(walls[i].y>H+50)walls.splice(i,1);
   }
 
-  // Move portals
-  for(let i=pts.length-1;i>=0;i--){
-    pts[i].y+=spd;
-    if(pts[i].y>H+40)pts.splice(i,1);
+  // Input P1
+  const k1=this.input.keyboard;
+  if(p1.alive){
+    if(k1.addKey('LEFT').isDown)p1.vx=-5;
+    else if(k1.addKey('RIGHT').isDown)p1.vx=5;
+    else p1.vx*=0.8;
   }
 
-  // P1 input
-  if(cur.left.isDown&&p1.ln>0&&!p1.mv){p1.ln--;p1.mv=1;}
-  if(cur.right.isDown&&p1.ln<LANES-1&&!p1.mv){p1.ln++;p1.mv=1;}
-  if(!cur.left.isDown&&!cur.right.isDown)p1.mv=0;
-  if(Phaser.Input.Keyboard.JustDown(cur.up)&&!p1.j){p1.vy=-12;p1.j=1;tone(300,80);}
+  // Input P2
+  if(p2&&p2.alive){
+    if(k1.addKey('A').isDown)p2.vx=-5;
+    else if(k1.addKey('D').isDown)p2.vx=5;
+    else p2.vx*=0.8;
+  }
 
   upd(p1);
-
-  // P2 input
-  if(p2){
-    if(wasd.a.isDown&&p2.ln>0&&!p2.mv){p2.ln--;p2.mv=1;}
-    if(wasd.d.isDown&&p2.ln<LANES-1&&!p2.mv){p2.ln++;p2.mv=1;}
-    if(!wasd.a.isDown&&!wasd.d.isDown)p2.mv=0;
-    if(Phaser.Input.Keyboard.JustDown(wasd.w)&&!p2.j){p2.vy=-12;p2.j=1;tone(300,80);}
-    upd(p2);
-  }
+  if(p2)upd(p2);
 
   // Check end
-  if(p1.d&&(!p2||p2.d)){
-    go=1;
-    if(!p2)win='';
-    else if(p1.d&&p2.d){
-      if(p1.sc>p2.sc)win='P1';
-      else if(p2.sc>p1.sc)win='P2';
-      else if(p1.c>p2.c)win='P1';
-      else if(p2.c>p1.c)win='P2';
-      else win='DRAW';
-    }else if(p1.d)win='P2';
-    else win='P1';
+  if(!p1.alive&&(!p2||!p2.alive)){
+    scene=2;
+    tone(150,300);
   }
 
   draw();
 }
 
+function spawnWall(){
+  const numPortals=Math.min(2+Math.floor(t/15),4);
+  const portals=[];
+  const safeIdx=Math.floor(Math.random()*numPortals);
+  const prevSafe=walls.length>0?walls[walls.length-1].portals.find(p=>p.safe):null;
+  const safeCol=prevSafe?prevSafe.col:colors[Math.floor(Math.random()*colors.length)];
+
+  for(let i=0;i<numPortals;i++){
+    const x=(W/numPortals)*i+(W/numPortals-PORTAL_W)/2;
+    const col=i===safeIdx?safeCol:colors[Math.floor(Math.random()*colors.length)];
+    portals.push({x,w:PORTAL_W,col,id:nextId,safe:i===safeIdx?1:0});
+    nextId++;
+  }
+
+  walls.push({y:-50,portals});
+}
+
 function upd(p){
-  if(p.d)return;
+  if(!p.alive)return;
 
-  // Lane position
-  const lx=p.cx-LW+p.ln*LW;
-  p.x+=(lx-p.x)*0.2;
+  p.x+=p.vx;
+  const minX=m===1?(p===p1?20:W/2+20):20;
+  const maxX=m===1?(p===p1?W/2-20:W-20):W-20;
+  if(p.x<minX)p.x=minX;
+  if(p.x>maxX-STICK_W)p.x=maxX-STICK_W;
 
-  // Gravity
-  p.vy+=0.6;
-  p.y+=p.vy;
-  if(p.y>=H-80){p.y=H-80;p.vy=0;p.j=0;}
+  // Check portal collision
+  for(let w of walls){
+    if(Math.abs(w.y-p.y)<30){
+      let hit=null;
+      for(let pt of w.portals){
+        if(p.x+STICK_W/2>pt.x&&p.x+STICK_W/2<pt.x+pt.w){
+          hit=pt;
+          break;
+        }
+      }
 
-  // Portal collision
-  for(let pt of pts){
-    if(pt.h)continue;
-    const px=p.cx-LW+pt.ln*LW;
-    if(Math.abs(p.x-px)<PW/2&&Math.abs(p.y-pt.y)<40){
-      if(p.ln===pt.ln){
-        const dst=Math.abs(p.y-pt.y);
-        if(dst<15){p.sc+=100;p.c++;tone(600,80);this.cameras.main.flash(100,255,255,255);}
-        else{p.sc+=50;p.c++;}
-        pt.h=1;
+      if(hit){
+        if(p.path.indexOf(hit.id)===-1){
+          p.path.push(hit.id);
+          if(hit.safe){
+            p.sc+=100;
+            tone(600,80);
+            cam.flash(50,255,255,255);
+          }else{
+            p.alive=0;
+            cam.shake(300,0.02);
+            tone(150,200);
+          }
+        }
       }else{
-        p.d=1;this.cameras.main.shake(200,0.01);tone(150,200);
+        // Missed all portals = hit wall
+        if(p.path.indexOf('wall_'+w.y)===-1){
+          p.path.push('wall_'+w.y);
+          p.alive=0;
+          cam.shake(300,0.02);
+          tone(150,200);
+        }
       }
     }
   }
@@ -125,75 +144,109 @@ function upd(p){
 function draw(){
   g.clear();
 
-  // Lanes P1
-  const cx1=p1.cx;
-  for(let i=0;i<LANES;i++){
-    g.lineStyle(2,0x333);
-    const lx=cx1-LW+i*LW;
-    g.strokeRect(lx-PW/2,0,PW,H);
-  }
-
-  // Lanes P2
-  if(p2){
-    const cx2=p2.cx;
-    for(let i=0;i<LANES;i++){
-      g.lineStyle(2,0x333);
-      const lx=cx2-LW+i*LW;
-      g.strokeRect(lx-PW/2,0,PW,H);
-    }
-    g.lineStyle(3,0xffff00);
+  // Split line for 2P
+  if(m===1){
+    g.lineStyle(2,0x555);
     g.lineBetween(W/2,0,W/2,H);
   }
 
-  // Portals P1
-  for(let pt of pts){
-    const px=cx1-LW+pt.ln*LW;
-    g.lineStyle(4,pt.h?0x00ff00:0x00ffff);
-    g.strokeCircle(px,pt.y,PW/2-5);
-    g.lineStyle(2,pt.h?0x00ff00:0x00ffff);
-    g.strokeCircle(px,pt.y,PW/2-15);
-  }
+  // Walls with portals
+  for(let w of walls){
+    // Draw wall sections (between portals)
+    g.fillStyle(0x666666);
+    let lastX=m===1&&p2?W/2:0;
 
-  // Portals P2
-  if(p2){
-    const cx2=p2.cx;
-    for(let pt of pts){
-      const px=cx2-LW+pt.ln*LW;
-      g.lineStyle(4,pt.h?0x00ff00:0xff9900);
-      g.strokeCircle(px,pt.y,PW/2-5);
-      g.lineStyle(2,pt.h?0x00ff00:0xff9900);
-      g.strokeCircle(px,pt.y,PW/2-15);
+    for(let pt of w.portals){
+      // Wall before portal
+      if(pt.x>lastX){
+        g.fillRect(lastX,w.y-20,pt.x-lastX,40);
+      }
+
+      // Portal
+      g.fillStyle(pt.col,0.3);
+      g.fillRect(pt.x,w.y-20,pt.w,40);
+      g.lineStyle(3,pt.col);
+      g.strokeRect(pt.x,w.y-20,pt.w,40);
+
+      // Portal indicator
+      if(pt.safe){
+        g.fillStyle(0xffffff);
+        g.fillCircle(pt.x+pt.w/2,w.y,5);
+      }
+
+      lastX=pt.x+pt.w;
+    }
+
+    // Wall after last portal
+    const maxX=m===1?(w.portals[0].x<W/2?W/2:W):W;
+    if(lastX<maxX){
+      g.fillStyle(0x666666);
+      g.fillRect(lastX,w.y-20,maxX-lastX,40);
     }
   }
 
-  // Player P1
-  g.fillStyle(p1.d?0x444:0x0099ff);
-  g.fillCircle(p1.x,p1.y,20);
-  g.lineStyle(2,0xffffff);
-  g.strokeCircle(p1.x,p1.y,20);
+  // Player 1 (stick figure)
+  if(p1){
+    const col=p1.alive?0x00aaff:0x555;
+    g.fillStyle(col);
+    g.fillRect(p1.x,p1.y-STICK_H,STICK_W,STICK_H);
+    g.fillCircle(p1.x+STICK_W/2,p1.y-STICK_H-8,8);
+    g.lineStyle(3,col);
+    g.lineBetween(p1.x+STICK_W/2,p1.y-STICK_H+10,p1.x-5,p1.y-STICK_H+25);
+    g.lineBetween(p1.x+STICK_W/2,p1.y-STICK_H+10,p1.x+STICK_W+5,p1.y-STICK_H+25);
+  }
 
-  // Player P2
+  // Player 2
   if(p2){
-    g.fillStyle(p2.d?0x444:0xff6600);
-    g.fillCircle(p2.x,p2.y,20);
-    g.lineStyle(2,0xffffff);
-    g.strokeCircle(p2.x,p2.y,20);
+    const col=p2.alive?0xff9900:0x555;
+    g.fillStyle(col);
+    g.fillRect(p2.x,p2.y-STICK_H,STICK_W,STICK_H);
+    g.fillCircle(p2.x+STICK_W/2,p2.y-STICK_H-8,8);
+    g.lineStyle(3,col);
+    g.lineBetween(p2.x+STICK_W/2,p2.y-STICK_H+10,p2.x-5,p2.y-STICK_H+25);
+    g.lineBetween(p2.x+STICK_W/2,p2.y-STICK_H+10,p2.x+STICK_W+5,p2.y-STICK_H+25);
   }
 
   // UI
-  if(p2){
-    txt.setText(`P1: ${p1.sc} x${p1.c}    P2: ${p2.sc} x${p2.c}`);
-  }else{
-    txt.setText(`Score: ${p1.sc}  Combo: x${p1.c}`);
-  }
+  this.add.text(20,20,`P1: ${p1.sc}`,{fontSize:'18px',color:'#0af',fontFamily:'monospace'}).setOrigin(0);
+  if(p2)this.add.text(W-120,20,`P2: ${p2.sc}`,{fontSize:'18px',color:'#f90',fontFamily:'monospace'}).setOrigin(0);
 
-  if(go){
-    g.fillStyle(0x000000,0.7);
-    g.fillRect(0,0,W,H);
-    const msg=p2?`WIN: ${win}`:'GAME OVER';
-    this.add.text(W/2,H/2-40,msg,{fontSize:'48px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
-    this.add.text(W/2,H/2+20,'SPACE: Restart  T: Toggle Mode',{fontSize:'20px',color:'#aaa',fontFamily:'monospace'}).setOrigin(0.5);
-  }
+  this.add.text(W/2,20,'Choose SAFE portal (white dot)!',{fontSize:'16px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
+  this.add.text(W/2,H-20,'T: Menu',{fontSize:'14px',color:'#888',fontFamily:'monospace'}).setOrigin(0.5);
+}
+
+function drawMenu(){
+  g.clear();
+  g.fillStyle(0x000000);
+  g.fillRect(0,0,W,H);
+
+  this.add.text(W/2,H/2-120,'QUANTUM DASH',{fontSize:'56px',color:'#0ff',fontFamily:'monospace',fontStyle:'bold'}).setOrigin(0.5);
+  this.add.text(W/2,H/2-40,'Portal Runner',{fontSize:'24px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
+
+  this.add.text(W/2,H/2+40,'Press 1 for ONE PLAYER',{fontSize:'28px',color:'#0af',fontFamily:'monospace'}).setOrigin(0.5);
+  this.add.text(W/2,H/2+80,'Press 2 for TWO PLAYERS',{fontSize:'28px',color:'#f90',fontFamily:'monospace'}).setOrigin(0.5);
+
+  this.add.text(W/2,H/2+140,'Choose portals with WHITE DOT to survive!',{fontSize:'16px',color:'#ff0',fontFamily:'monospace'}).setOrigin(0.5);
+  this.add.text(W/2,H/2+165,'Wrong portals = death! Think fast!',{fontSize:'16px',color:'#f55',fontFamily:'monospace'}).setOrigin(0.5);
+
+  this.add.text(W/2,H-40,'P1: ← → | P2: A D',{fontSize:'14px',color:'#888',fontFamily:'monospace'}).setOrigin(0.5);
+}
+
+function drawEnd(){
+  g.clear();
+
+  const win=!p2?'':p1.sc>p2.sc?'P1 WINS!':p2.sc>p1.sc?'P2 WINS!':'DRAW!';
+
+  g.fillStyle(0x000000,0.8);
+  g.fillRect(0,0,W,H);
+
+  this.add.text(W/2,H/2-80,'GAME OVER',{fontSize:'48px',color:'#f55',fontFamily:'monospace'}).setOrigin(0.5);
+  if(win)this.add.text(W/2,H/2-20,win,{fontSize:'36px',color:'#0f0',fontFamily:'monospace'}).setOrigin(0.5);
+
+  this.add.text(W/2,H/2+30,`P1 Score: ${p1.sc}`,{fontSize:'24px',color:'#0af',fontFamily:'monospace'}).setOrigin(0.5);
+  if(p2)this.add.text(W/2,H/2+60,`P2 Score: ${p2.sc}`,{fontSize:'24px',color:'#f90',fontFamily:'monospace'}).setOrigin(0.5);
+
+  this.add.text(W/2,H/2+120,'SPACE: Back to Menu',{fontSize:'20px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
 }
 
 function tone(f,d){
