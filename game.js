@@ -16,7 +16,7 @@ function create(){
   txts.opt1=this.add.text(W/2,H/2+40,'Press 1 for ONE PLAYER',{fontSize:'28px',color:'#0af',fontFamily:'monospace'}).setOrigin(0.5);
   txts.opt2=this.add.text(W/2,H/2+80,'Press 2 for TWO PLAYERS',{fontSize:'28px',color:'#f90',fontFamily:'monospace'}).setOrigin(0.5);
   txts.hint1=this.add.text(W/2,H/2+140,'Go through COLORED portal!',{fontSize:'18px',color:'#ff0',fontFamily:'monospace'}).setOrigin(0.5);
-  txts.hint2=this.add.text(W/2,H/2+165,'1P: Score | 2P: Survive longest!',{fontSize:'16px',color:'#aaa',fontFamily:'monospace'}).setOrigin(0.5);
+  txts.hint2=this.add.text(W/2,H/2+165,'2P: BOTH must pass or other wins!',{fontSize:'16px',color:'#aaa',fontFamily:'monospace'}).setOrigin(0.5);
   txts.hint3=this.add.text(W/2,H/2+190,'Hit wall = DEATH!',{fontSize:'18px',color:'#f55',fontFamily:'monospace'}).setOrigin(0.5);
   txts.ctrl=this.add.text(W/2,H-40,'P1: ← → | P2: A D',{fontSize:'16px',color:'#888',fontFamily:'monospace'}).setOrigin(0.5);
   txts.p1sc=this.add.text(20,20,'',{fontSize:'20px',color:'#0af',fontFamily:'monospace'}).setOrigin(0);
@@ -42,12 +42,12 @@ function start(s,mode){
   m=mode;sc=1;t=0;spd=2.5;baseSpeed=4;walls=[];nextId=0;
   const x1=m===1?W/3:W/2;
   const x2=2*W/3;
-  p1={x:x1,vx:0,y:H-80,path:[],alive:1,sc:0,time:0};
-  if(m===1)p2={x:x2,vx:0,y:H-80,path:[],alive:1,sc:0,time:0};
+  p1={x:x1,vx:0,y:H-80,path:[],alive:1,sc:0};
+  if(m===1)p2={x:x2,vx:0,y:H-80,path:[],alive:1,sc:0};
   else p2=null;
 
   // First wall
-  walls.push({y:-100,portalX:W/2-PORTAL_W/2,portalW:PORTAL_W,col:colors[0],id:nextId,safe:1,hit:0});
+  walls.push({y:-100,portalX:W/2-PORTAL_W/2,portalW:PORTAL_W,col:colors[0],id:nextId,safe:1,p1hit:0,p2hit:0});
   nextId++;
 
   hideAll();
@@ -60,16 +60,16 @@ function update(_,dt){
 
   t+=dt*0.001;
 
-  // Progressive difficulty - speed increases faster
-  if(t>5)spd=2.5+t*0.15;
-  if(spd>8)spd=8;
+  // Progressive difficulty - SLOWER acceleration
+  if(t>10)spd=2.5+t*0.08;  // Reduced from 0.15
+  if(spd>6)spd=6;  // Reduced max from 8
 
-  // Player speed also increases
-  if(t>5)baseSpeed=4+t*0.1;
-  if(baseSpeed>9)baseSpeed=9;
+  // Player speed also increases SLOWER
+  if(t>10)baseSpeed=4+t*0.05;  // Reduced from 0.1
+  if(baseSpeed>7)baseSpeed=7;  // Reduced max from 9
 
-  // Reduce wall spacing as game progresses
-  const currentSpacing=Math.max(200,WALL_SPACING-t*3);
+  // Reduce wall spacing as game progresses SLOWER
+  const currentSpacing=Math.max(220,WALL_SPACING-t*2);  // Reduced from 3
 
   if(walls.length===0||walls[walls.length-1].y>currentSpacing)spawnWall();
 
@@ -83,18 +83,16 @@ function update(_,dt){
     if(k.addKey('LEFT').isDown)p1.vx=-baseSpeed;
     else if(k.addKey('RIGHT').isDown)p1.vx=baseSpeed;
     else p1.vx*=0.85;
-    p1.time=t;
   }
 
   if(p2&&p2.alive){
     if(k.addKey('A').isDown)p2.vx=-baseSpeed;
     else if(k.addKey('D').isDown)p2.vx=baseSpeed;
     else p2.vx*=0.85;
-    p2.time=t;
   }
 
-  upd(p1);
-  if(p2)upd(p2);
+  upd(p1,1);
+  if(p2)upd(p2,2);
 
   // Player collision (2P push mechanic)
   if(m===1&&p1.alive&&p2.alive){
@@ -110,10 +108,21 @@ function update(_,dt){
     }
   }
 
-  if(!p1.alive&&(!p2||!p2.alive)){
-    sc=2;
-    tone(150,400);
-    showEnd();
+  // Check game over conditions
+  if(m===0){
+    // 1P: Just check if dead
+    if(!p1.alive){
+      sc=2;
+      tone(150,400);
+      showEnd();
+    }
+  }else{
+    // 2P: If one dies, other wins
+    if(!p1.alive||!p2.alive){
+      sc=2;
+      tone(150,400);
+      showEnd();
+    }
   }
 
   draw();
@@ -123,7 +132,7 @@ function update(_,dt){
     if(p1)txts.p1sc.setText(`Score: ${p1.sc}`);
     txts.timer.setText(`Time: ${t.toFixed(1)}s`);
   }else{
-    // 2P: Show time survived for each
+    // 2P: Show status for each
     txts.timer.setText(`Time: ${t.toFixed(1)}s`);
     if(p1)txts.p1sc.setText(`P1: ${p1.alive?'ALIVE':'DEAD'}`);
     if(p2)txts.p2sc.setText(`P2: ${p2.alive?'ALIVE':'DEAD'}`);
@@ -138,11 +147,11 @@ function spawnWall(){
   const prevSafe=walls.length>0?walls.find(w=>w.safe):null;
   const col=prevSafe?prevSafe.col:colors[Math.floor(Math.random()*colors.length)];
 
-  walls.push({y:-50,portalX,portalW:PORTAL_W,col,id:nextId,safe:1,hit:0});
+  walls.push({y:-50,portalX,portalW:PORTAL_W,col,id:nextId,safe:1,p1hit:0,p2hit:0});
   nextId++;
 }
 
-function upd(p){
+function upd(p,playerNum){
   if(!p||!p.alive)return;
 
   p.x+=p.vx;
@@ -150,21 +159,50 @@ function upd(p){
   if(p.x>W-10)p.x=W-10;
 
   for(let w of walls){
-    if(Math.abs(w.y-p.y)<25&&!w.hit){
+    // Check which player hit this wall
+    const alreadyHit=playerNum===1?w.p1hit:w.p2hit;
+
+    if(Math.abs(w.y-p.y)<25&&!alreadyHit){
       // Check if passed through portal (safe)
       if(p.x>w.portalX&&p.x<w.portalX+w.portalW){
+        // Mark this player as passed
+        if(playerNum===1)w.p1hit=1;
+        else w.p2hit=1;
+
         if(p.path.indexOf(w.id)===-1){
           p.path.push(w.id);
           p.sc+=100;
-          w.hit=1;
           tone(700,100);
           cam.flash(80,255,255,255);
+        }
+
+        // In 2P mode, check if BOTH passed
+        if(m===1){
+          // If this player passed but other didn't, other player loses
+          // Check after a delay to see if other player also passes
         }
       }else{
         // Hit wall!
         if(p.path.indexOf(w.id)===-1){
           p.path.push(w.id);
           p.alive=0;
+          cam.shake(400,0.015);
+          tone(120,300);
+        }
+      }
+    }
+
+    // In 2P: Check if wall passed both players and only one went through
+    if(m===1&&w.y>H-60){
+      if((w.p1hit&&!w.p2hit&&p2.alive)||(w.p2hit&&!w.p1hit&&p1.alive)){
+        // One passed, other didn't - kill the one who didn't pass
+        if(!w.p1hit&&p1.alive){
+          p1.alive=0;
+          cam.shake(400,0.015);
+          tone(120,300);
+        }
+        if(!w.p2hit&&p2.alive){
+          p2.alive=0;
           cam.shake(400,0.015);
           tone(120,300);
         }
@@ -244,7 +282,7 @@ function showGame(){
   }else{
     txts.p1sc.setVisible(1);
     txts.p2sc.setVisible(1);
-    txts.help.setVisible(1).setText('PUSH & SURVIVE!');
+    txts.help.setVisible(1).setText('BOTH MUST PASS!');
   }
   txts.timer.setVisible(1);
   txts.menu.setVisible(1);
@@ -260,16 +298,26 @@ function showEnd(){
   txts.restart.setVisible(1);
 
   if(m===0){
-    // 1P: Show score
-    txts.p1end.setVisible(1).setText(`Score: ${p1.sc} pts | Time: ${p1.time.toFixed(1)}s`);
+    // 1P: Show score and time
+    txts.p1end.setVisible(1).setText(`Score: ${p1.sc} pts | Time: ${t.toFixed(1)}s`);
   }else{
-    // 2P: Show who survived longest
-    txts.p1end.setVisible(1).setText(`P1: ${p1.time.toFixed(1)}s`);
-    txts.p2end.setVisible(1).setText(`P2: ${p2.time.toFixed(1)}s`);
+    // 2P: Show who won based on who survived
+    txts.timer.setVisible(1);
 
-    if(p1.time>p2.time)txts.win.setVisible(1).setText('P1 WINS!');
-    else if(p2.time>p1.time)txts.win.setVisible(1).setText('P2 WINS!');
-    else txts.win.setVisible(1).setText('DRAW!');
+    if(p1.alive&&!p2.alive){
+      txts.win.setVisible(1).setText('P1 WINS!');
+      txts.p1end.setVisible(1).setText('P1: Survived');
+      txts.p2end.setVisible(1).setText('P2: Died');
+    }else if(p2.alive&&!p1.alive){
+      txts.win.setVisible(1).setText('P2 WINS!');
+      txts.p1end.setVisible(1).setText('P1: Died');
+      txts.p2end.setVisible(1).setText('P2: Survived');
+    }else{
+      // Both died at same time
+      txts.win.setVisible(1).setText('DRAW!');
+      txts.p1end.setVisible(1).setText('P1: Died');
+      txts.p2end.setVisible(1).setText('P2: Died');
+    }
   }
 }
 
