@@ -1,5 +1,5 @@
 // Quantum Dash - Portal Runner
-const W=800,H=600,STICK_H=50,STICK_W=6,WALL_SPACING=300,PORTAL_W=120,PORTAL_H=60;
+const W=800,H=600,STICK_H=50,STICK_W=6,WALL_SPACING=300,PORTAL_W=100,WALL_THICK=8;
 let sc=0,m=0,p1,p2,walls=[],cam,g,spd=2,t=0,colors=[0x00ffff,0xff00ff,0xffff00,0xff0000,0x00ff00],nextId=0,snd,txts={};
 
 const cfg={type:Phaser.AUTO,width:W,height:H,backgroundColor:'#000',scene:{create,update}};
@@ -15,8 +15,8 @@ function create(){
   txts.sub=this.add.text(W/2,H/2-40,'Portal Runner',{fontSize:'24px',color:'#fff',fontFamily:'monospace'}).setOrigin(0.5);
   txts.opt1=this.add.text(W/2,H/2+40,'Press 1 for ONE PLAYER',{fontSize:'28px',color:'#0af',fontFamily:'monospace'}).setOrigin(0.5);
   txts.opt2=this.add.text(W/2,H/2+80,'Press 2 for TWO PLAYERS',{fontSize:'28px',color:'#f90',fontFamily:'monospace'}).setOrigin(0.5);
-  txts.hint1=this.add.text(W/2,H/2+140,'Choose portal with WHITE DOT!',{fontSize:'18px',color:'#ff0',fontFamily:'monospace'}).setOrigin(0.5);
-  txts.hint2=this.add.text(W/2,H/2+170,'Wrong portal = DEATH!',{fontSize:'18px',color:'#f55',fontFamily:'monospace'}).setOrigin(0.5);
+  txts.hint1=this.add.text(W/2,H/2+140,'Go through COLORED portal (white dot)!',{fontSize:'18px',color:'#ff0',fontFamily:'monospace'}).setOrigin(0.5);
+  txts.hint2=this.add.text(W/2,H/2+170,'Hit wall = DEATH!',{fontSize:'18px',color:'#f55',fontFamily:'monospace'}).setOrigin(0.5);
   txts.ctrl=this.add.text(W/2,H-40,'P1: ← → | P2: A D',{fontSize:'16px',color:'#888',fontFamily:'monospace'}).setOrigin(0.5);
   txts.p1sc=this.add.text(20,20,'',{fontSize:'20px',color:'#0af',fontFamily:'monospace'}).setOrigin(0);
   txts.p2sc=this.add.text(W-120,20,'',{fontSize:'20px',color:'#f90',fontFamily:'monospace'}).setOrigin(0);
@@ -45,7 +45,8 @@ function start(s,mode){
   else p2=null;
 
   // First wall
-  walls.push({y:-100,portals:[{x:W/2-PORTAL_W/2,col:colors[0],id:nextId,safe:1}]});
+  const area=m===1?W/2:W;
+  walls.push({y:-100,portalX:area/2-PORTAL_W/2,portalW:PORTAL_W,col:colors[0],id:nextId,safe:1,hit:0});
   nextId++;
 
   hideAll();
@@ -63,7 +64,7 @@ function update(_,dt){
 
   for(let i=walls.length-1;i>=0;i--){
     walls[i].y+=spd;
-    if(walls[i].y>H+100)walls.splice(i,1);
+    if(walls[i].y>H+50)walls.splice(i,1);
   }
 
   const k=this.input.keyboard;
@@ -94,25 +95,19 @@ function update(_,dt){
 }
 
 function spawnWall(){
-  const num=Math.min(2+Math.floor(t/20),3);
-  const portals=[];
-  const safeIdx=Math.floor(Math.random()*num);
-  const prevSafe=walls.length>0?walls[walls.length-1].portals.find(p=>p.safe):null;
-  const safeCol=prevSafe?prevSafe.col:colors[Math.floor(Math.random()*colors.length)];
+  const area=m===1?W/2:W;
+  const minX=50;
+  const maxX=area-PORTAL_W-50;
+  const portalX=minX+Math.random()*(maxX-minX);
 
-  // Distribute portals with spacing
-  const totalW=m===1?W/2:W;
-  const startX=m===1&&p2?0:0;
-  const spacing=totalW/(num+1);
+  const prevSafe=walls.length>0?walls.find(w=>w.safe):null;
+  const col=prevSafe?prevSafe.col:colors[Math.floor(Math.random()*colors.length)];
 
-  for(let i=0;i<num;i++){
-    const x=startX+spacing*(i+1)-PORTAL_W/2;
-    const col=i===safeIdx?safeCol:colors[Math.floor(Math.random()*colors.length)];
-    portals.push({x,col,id:nextId,safe:i===safeIdx?1:0});
-    nextId++;
-  }
+  // Add decoy portals (different colors) with low probability
+  const hasDecoy=Math.random()>0.7&&t>10;
 
-  walls.push({y:-80,portals});
+  walls.push({y:-50,portalX,portalW:PORTAL_W,col,id:nextId,safe:1,hit:0,hasDecoy});
+  nextId++;
 }
 
 function upd(p){
@@ -125,32 +120,20 @@ function upd(p){
   if(p.x>maxX)p.x=maxX;
 
   for(let w of walls){
-    if(Math.abs(w.y-p.y)<40){
-      let hit=null;
-      for(let pt of w.portals){
-        if(p.x>pt.x&&p.x<pt.x+PORTAL_W){
-          hit=pt;
-          break;
-        }
-      }
-
-      if(hit){
-        if(p.path.indexOf(hit.id)===-1){
-          p.path.push(hit.id);
-          if(hit.safe){
-            p.sc+=100;
-            tone(700,100);
-            cam.flash(80,255,255,255);
-          }else{
-            p.alive=0;
-            cam.shake(400,0.015);
-            tone(120,300);
-          }
+    if(Math.abs(w.y-p.y)<25&&!w.hit){
+      // Check if passed through portal (safe)
+      if(p.x>w.portalX&&p.x<w.portalX+w.portalW){
+        if(p.path.indexOf(w.id)===-1){
+          p.path.push(w.id);
+          p.sc+=100;
+          w.hit=1;
+          tone(700,100);
+          cam.flash(80,255,255,255);
         }
       }else{
-        // Missed all portals
-        if(p.path.indexOf('miss_'+w.y)===-1){
-          p.path.push('miss_'+w.y);
+        // Hit wall!
+        if(p.path.indexOf(w.id)===-1){
+          p.path.push(w.id);
           p.alive=0;
           cam.shake(400,0.015);
           tone(120,300);
@@ -165,31 +148,43 @@ function draw(){
 
   // Split line for 2P
   if(m===1){
-    g.lineStyle(3,0x444);
+    g.lineStyle(3,0x333);
     g.lineBetween(W/2,0,W/2,H);
   }
 
-  // Draw walls with portals
+  // Draw walls with portal gaps
   for(let w of walls){
-    for(let pt of w.portals){
-      // Portal glow
-      g.fillStyle(pt.col,0.2);
-      g.fillRect(pt.x-5,w.y-PORTAL_H/2-5,PORTAL_W+10,PORTAL_H+10);
+    const areaW=m===1?W/2:W;
+    const startX=0;
 
-      // Portal frame
-      g.lineStyle(4,pt.col);
-      g.strokeRect(pt.x,w.y-PORTAL_H/2,PORTAL_W,PORTAL_H);
+    // Wall color (gray)
+    const wallCol=0x666666;
 
-      // Inner portal
-      g.fillStyle(pt.col,0.5);
-      g.fillRect(pt.x+4,w.y-PORTAL_H/2+4,PORTAL_W-8,PORTAL_H-8);
+    // Draw wall before portal
+    if(w.portalX>startX){
+      g.fillStyle(wallCol);
+      g.fillRect(startX,w.y-WALL_THICK/2,w.portalX-startX,WALL_THICK);
+    }
 
-      // Safe indicator
-      if(pt.safe){
-        g.fillStyle(0xffffff);
-        g.fillCircle(pt.x+PORTAL_W/2,w.y,8);
-        g.fillCircle(pt.x+PORTAL_W/2,w.y,4);
-      }
+    // Draw portal gap with colored outline
+    g.lineStyle(4,w.col);
+    g.strokeRect(w.portalX,w.y-WALL_THICK/2-4,w.portalW,WALL_THICK+8);
+
+    // Portal inner glow
+    g.fillStyle(w.col,0.3);
+    g.fillRect(w.portalX,w.y-WALL_THICK/2,w.portalW,WALL_THICK);
+
+    // Safe indicator (white dot)
+    if(w.safe){
+      g.fillStyle(0xffffff);
+      g.fillCircle(w.portalX+w.portalW/2,w.y,6);
+    }
+
+    // Wall after portal
+    const endX=w.portalX+w.portalW;
+    if(endX<startX+areaW){
+      g.fillStyle(wallCol);
+      g.fillRect(endX,w.y-WALL_THICK/2,startX+areaW-endX,WALL_THICK);
     }
   }
 
